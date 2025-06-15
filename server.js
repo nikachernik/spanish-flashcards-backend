@@ -21,11 +21,34 @@ app.use(helmet());
 
 // CORS configuration
 const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? [process.env.FRONTEND_URL, 'exp://', 'https://expo.dev']
+  ? [
+      process.env.FRONTEND_URL, 
+      'https://spanish-flashcards-60ekqxixg-nikas-projects-75fe3a16.vercel.app',
+      'https://spanish-flashcards.vercel.app',
+      'https://*.vercel.app',
+      'exp://', 
+      'https://expo.dev'
+    ]
   : ['http://localhost:19006', 'http://localhost:3000', 'exp://'];
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.some(allowed => {
+      if (allowed.includes('*')) {
+        const regex = new RegExp(allowed.replace('*', '.*'));
+        return regex.test(origin);
+      }
+      return allowed === origin;
+    })) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Temporairement autoriser toutes les origines
+    }
+  },
   credentials: true
 }));
 
