@@ -12,10 +12,11 @@ const authController = {
 
       const { email, password, fullName } = req.body;
 
-      // Create user in Supabase Auth
+      // Create user in Supabase Auth with auto-confirm
       const { data, error } = await supabase.auth.admin.createUser({
         email,
         password,
+        email_confirm: true, // Auto-confirmer l'email
         user_metadata: { full_name: fullName }
       });
 
@@ -163,6 +164,79 @@ const authController = {
     } catch (error) {
       console.error('Update profile error:', error);
       res.status(500).json({ message: 'Server error' });
+    }
+  },
+
+  async resetPasswordRequest(req, res) {
+    try {
+      const { email } = req.body;
+      
+      // Vérifier si l'utilisateur existe
+      const { data: users, error: fetchError } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .eq('username', email.split('@')[0])
+        .single();
+      
+      if (fetchError || !users) {
+        // Ne pas révéler si l'email existe ou non pour des raisons de sécurité
+        return res.json({ 
+          message: 'Si un compte existe avec cet email, vous recevrez un lien de réinitialisation.' 
+        });
+      }
+      
+      // Générer un token de réinitialisation
+      const resetToken = jwt.sign(
+        { userId: users.id, email, type: 'password-reset' },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+      
+      // En production, vous devriez envoyer un email avec le lien
+      // Pour l'instant, on retourne le token pour les tests
+      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+      
+      console.log('Reset link:', resetLink);
+      
+      res.json({ 
+        message: 'Un email de réinitialisation a été envoyé.',
+        // En dev seulement - à retirer en production
+        resetLink: process.env.NODE_ENV === 'development' ? resetLink : undefined
+      });
+    } catch (error) {
+      console.error('Reset password error:', error);
+      res.status(500).json({ error: 'Erreur lors de la demande de réinitialisation' });
+    }
+  },
+
+  async resetPassword(req, res) {
+    try {
+      const { token, newPassword } = req.body;
+      
+      // Vérifier le token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      if (decoded.type !== 'password-reset') {
+        return res.status(400).json({ error: 'Token invalide' });
+      }
+      
+      // Mettre à jour le mot de passe dans Supabase Auth
+      const { data, error } = await supabase.auth.admin.updateUserById(
+        decoded.userId,
+        { password: newPassword }
+      );
+      
+      if (error) {
+        return res.status(400).json({ error: error.message });
+      }
+      
+      res.json({ message: 'Mot de passe réinitialisé avec succès' });
+    } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        return res.status(400).json({ error: 'Le lien de réinitialisation a expiré' });
+      }
+      console.error('Reset password error:', error);
+      res.status(500).json({ error: 'Erreur lors de la réinitialisation' });
     }
   }
 };
